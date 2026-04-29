@@ -78,3 +78,7 @@ All `/v1/chat/async` requests send `model_tier: "turbo"` — the fastest tier pe
 ## Content safety
 
 Repo uses `sk_YOUR_API_KEY` as the placeholder in `.env.example`. The real key only lives in `.env.local`, which is `.gitignore`d. The chat UI refers to the model as "SuperDocs' AI" or "the AI" — never names a specific provider.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).

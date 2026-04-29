@@ -1,0 +1,59 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@import "../lib/diff-overlay.css";
+
+html,
+body {
+  height: 100%;
+  background: #fafafa;
+  color: #0f172a;
+}
+
+.ProseMirror {
+  outline: none;
+  min-height: 100%;
+  padding: 2.5rem 3rem 8rem;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.ProseMirror:focus {
+  outline: none;
+}
+.ProseMirror h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 1.5rem 0 1rem;
+}
+.ProseMirror h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 1.25rem 0 0.75rem;
+  color: #111827;
+}
+.ProseMirror h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 1rem 0 0.5rem;
+}
+.ProseMirror p {
+  margin: 0.5rem 0;
+}
+.ProseMirror ol,
+.ProseMirror ul {
+  margin: 0.5rem 0 0.5rem 1.5rem;
+}
+.ProseMirror ol {
+  list-style: decimal;
+}
+.ProseMirror ul {
+  list-style: disc;
+}
+.ProseMirror li {
+  margin: 0.15rem 0;
+}
+.ProseMirror blockquote {
+  border-left: 3px solid #d4d4d8;
+  padding-left: 0.875rem;
+  margin: 0.75rem 0;
+  color: #52525b;
+}

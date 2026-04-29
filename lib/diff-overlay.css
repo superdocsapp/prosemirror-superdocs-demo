@@ -1,0 +1,103 @@
+.diff-chunk-edit {
+  outline: 2px solid #4285f4;
+  outline-offset: -1px;
+  background: rgba(66, 133, 244, 0.06);
+  border-radius: 4px;
+  position: relative;
+}
+.diff-chunk-has-preview > *:not([data-diff-widget]) {
+  display: none !important;
+}
+.diff-chunk-delete {
+  outline: 2px solid #dc3545;
+  outline-offset: -1px;
+  background: rgba(220, 53, 69, 0.06);
+  border-radius: 4px;
+  position: relative;
+}
+.diff-chunk-delete > *:not([data-diff-widget]) {
+  text-decoration: line-through;
+  text-decoration-color: rgba(220, 53, 69, 0.5);
+  opacity: 0.65;
+}
+.inline-diff-controls {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 3px 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 50;
+  user-select: none;
+}
+.inline-diff-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 4px;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+}
+.inline-diff-btn--accept {
+  background: #e6ffed;
+  color: #28a745;
+}
+.inline-diff-btn--accept:hover {
+  background: #28a745;
+  color: white;
+}
+.inline-diff-btn--deny {
+  background: #ffeef0;
+  color: #dc3545;
+}
+.inline-diff-btn--deny:hover {
+  background: #dc3545;
+  color: white;
+}
+.diff-edit-wrapper {
+  position: relative;
+  padding: 44px 8px 8px 8px;
+}
+.diff-preview-content {
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.diff-word-deleted {
+  background: rgba(220, 53, 69, 0.15);
+  color: #b71c1c;
+  text-decoration: line-through;
+  text-decoration-color: #dc3545;
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+.diff-word-added {
+  background: rgba(40, 167, 69, 0.15);
+  color: #1b5e20;
+  text-decoration: underline;
+  text-decoration-color: #28a745;
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+.diff-ghost-create {
+  position: relative;
+  border: 2px dashed #28a745;
+  background: rgba(40, 167, 69, 0.04);
+  border-radius: 6px;
+  padding: 44px 8px 8px 8px;
+  margin: 8px 0;
+}
+.diff-ghost-content {
+  opacity: 0.75;
+  line-height: 1.6;
+}

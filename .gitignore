@@ -1,0 +1,33 @@
+# deps
+node_modules
+.pnp
+.pnp.*
+
+# build
+.next
+out
+dist
+build
+next-env.d.ts
+
+# runtime
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env
+.env
+.env.local
+.env.*.local
+
+# typescript
+*.tsbuildinfo
+
+# ignore bulky docs blob
+llms-full.txt
+
+# verification artefact — internal working file, never publish
+VERIFICATION_REPORT.md

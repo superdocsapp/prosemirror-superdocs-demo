@@ -2,6 +2,8 @@
 
 Two-pane AI document editor. Raw ProseMirror on the left, SuperDocs chat on the right. Surgical edits via inline diff overlay + side-by-side review cards.
 
+**Watch the build:** [I converted ProseMirror into Cursor for documents in less than 15 minutes using SuperDocs](https://youtu.be/IrSePc2BAlM)
+
 ## Setup
 
 ```bash

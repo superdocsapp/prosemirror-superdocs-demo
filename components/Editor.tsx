@@ -17,11 +17,30 @@ export type EditorHandle = {
   getView: () => EditorView | null;
 };
 
-function htmlToDoc(html: string) {
-  const el = document.createElement("div");
-  el.innerHTML = html;
-  return DOMParser.fromSchema(schema).parse(el);
+//fresh plugins everytime
+function createPlugins() {
+  return [
+    history(),
+    keymap({ "Mod-z": undo, "Mod-y": redo, "Mod-Shift-z": redo }),
+    keymap(baseKeymap),
+    proposedChangeDecoration(),
+  ];
 }
+
+function htmlToDoc(html: string) {
+  const el = document.createElement("div")
+  el.innerHTML = html
+  try {
+    return DOMParser.fromSchema(schema).parse(el)
+  } catch (err) {
+    console.error("htmlToDoc parse failed:", err)
+    console.log("Problematic HTML:", html.slice(0, 500))
+    // Return empty doc as fallback
+    return DOMParser.fromSchema(schema).parse(
+      document.createElement("div")
+    )
+  }
+} //
 
 function docToHtml(state: EditorState): string {
   const fragment = DOMSerializer.fromSchema(schema).serializeFragment(state.doc.content);
@@ -53,6 +72,8 @@ export const Editor = forwardRef<EditorHandle, { initialHtml: string }>(function
   const mountRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
 
+  const getCurrentView = () => viewRef.current;
+
   useEffect(() => {
     if (!mountRef.current) return;
     const doc = htmlToDoc(initialHtml);
@@ -77,19 +98,27 @@ export const Editor = forwardRef<EditorHandle, { initialHtml: string }>(function
     ref,
     () => ({
       getHtml() {
-        const v = viewRef.current;
+        const v = getCurrentView();
         if (!v) return "";
         return docToHtml(v.state);
       },
       setHtml(html) {
-        const v = viewRef.current;
-        if (!v) return;
+        const currentView = getCurrentView();
+        if (!currentView?.dom.parentElement) return;
+
+        const mount = currentView.dom.parentElement;
+        currentView.destroy();
+
         const doc = htmlToDoc(html);
-        const newState = EditorState.create({ doc, plugins: v.state.plugins });
-        v.updateState(newState);
+        const newState = EditorState.create({
+          doc,
+          plugins: createPlugins(),
+        });
+        const newView = new EditorView(mount, { state: newState });
+        viewRef.current = newView;
       },
       replaceChunk(chunkId, newHtml) {
-        const v = viewRef.current;
+        const v = getCurrentView();
         if (!v) return false;
         const target = findChunkRangeInDoc(v, chunkId);
         if (!target) return false;
@@ -99,7 +128,7 @@ export const Editor = forwardRef<EditorHandle, { initialHtml: string }>(function
         return true;
       },
       getView() {
-        return viewRef.current;
+        return getCurrentView();
       },
     }),
     [],

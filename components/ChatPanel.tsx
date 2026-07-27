@@ -133,13 +133,15 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
         try {
           const data = JSON.parse(me.data);
           if (typeof data.content === "string" && data.content) {
-            editorRef.current?.setHtml(data.content);
-            lastGoodHtmlRef.current = data.content;
-          }
-        } catch {
-          // ignore parse errors — the next event still delivers
+      // Clear decorations before doc update
+          const view = editorRef.current?.getView();
+          setPendingChanges([]);
+          editorRef.current?.setHtml(data.content);
+          lastGoodHtmlRef.current = data.content;
         }
-      };
+      } catch {
+      }
+    };
 
       const onIntermediate = (e: Event) => {
         const me = e as MessageEvent;
@@ -171,20 +173,24 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
           const data = JSON.parse(me.data);
           const response = data.result?.response ?? data.content ?? "";
           const updatedHtml = data.result?.document_changes?.updated_html;
-          finalizeInFlight(response);
-          if (typeof updatedHtml === "string" && updatedHtml) {
-            editorRef.current?.setHtml(updatedHtml);
-            lastGoodHtmlRef.current = updatedHtml;
-          }
-          setPendingChanges([]);
-          const view = editorRef.current?.getView();
-          if (view) clearProposedChanges(view);
-        } catch (err) {
-          console.error("final parse failed", err);
+
+
+    // STEP 2: Now safe to update document
+        finalizeInFlight(response);
+        if (typeof updatedHtml === "string" && updatedHtml) {
+          editorRef.current?.setHtml(updatedHtml);      // ← no decorations = no crash
+          lastGoodHtmlRef.current = updatedHtml;
         }
-        cleanupStream();
-        setIsSending(false);
-      };
+
+        setPendingChanges([]); 
+        
+
+    } catch (err) {
+      console.error("final parse failed", err);
+    }
+    cleanupStream();
+    setIsSending(false);
+  };
 
       const onUsage = (e: Event) => {
         const me = e as MessageEvent;
@@ -241,6 +247,7 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
     setPendingChanges([]);
     const view = editorRef.current?.getView();
     if (view) clearProposedChanges(view);
+    setPendingChanges([]);
 
     const userId = `u-${Date.now()}`;
     setMessages((prev) => [

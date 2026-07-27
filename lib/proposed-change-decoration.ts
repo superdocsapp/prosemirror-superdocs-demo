@@ -176,9 +176,17 @@ export function proposedChangeDecoration(): Plugin<State> {
   });
 }
 
-export const addProposedChange = (view: EditorView, change: ProposedChange) =>
+export const addProposedChange = (view: EditorView, change: ProposedChange) => {
+  if (!view || !view.state) return;
   view.dispatch(view.state.tr.setMeta(META_ADD, change));
-export const removeProposedChange = (view: EditorView, change_id: string) =>
+};
+
+export const removeProposedChange = (view: EditorView, change_id: string) => {
+  if (!view || !view.state) return;
   view.dispatch(view.state.tr.setMeta(META_REMOVE, change_id));
-export const clearProposedChanges = (view: EditorView) =>
+};
+
+export const clearProposedChanges = (view: EditorView) => {
+  if (!view || !view.state) return;
   view.dispatch(view.state.tr.setMeta(META_CLEAR, true));
+};

@@ -18,6 +18,7 @@ export type ProposedChange = {
   new_html: string | null;
   ai_explanation: string;
   insert_after_chunk_id: string | null;
+  document_id?: string | null;
 };
 
 const META_ADD = "proposedChangeAdd";
@@ -176,9 +177,15 @@ export function proposedChangeDecoration(): Plugin<State> {
   });
 }
 
-export const addProposedChange = (view: EditorView, change: ProposedChange) =>
+export const addProposedChange = (view: EditorView, change: ProposedChange) => {
+  if (!view || !view.state || view.isDestroyed) return;
   view.dispatch(view.state.tr.setMeta(META_ADD, change));
-export const removeProposedChange = (view: EditorView, change_id: string) =>
+};
+export const removeProposedChange = (view: EditorView, change_id: string) => {
+  if (!view || !view.state || view.isDestroyed) return;
   view.dispatch(view.state.tr.setMeta(META_REMOVE, change_id));
-export const clearProposedChanges = (view: EditorView) =>
+};
+export const clearProposedChanges = (view: EditorView) => {
+  if (!view || !view.state || view.isDestroyed) return;
   view.dispatch(view.state.tr.setMeta(META_CLEAR, true));
+};

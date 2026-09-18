@@ -31,6 +31,20 @@ type ChatMessage = {
 
 type DiffActionEvent = CustomEvent<{ action: "accept" | "deny"; change_id: string }>;
 
+// Shape of one entry in the FINAL SSE event's
+// `result.document_changes.changes[]` array. This is the server's
+// authoritative record of what happened to each proposed change — it is
+// NOT the same thing as `updated_html` (which this API does not return).
+type FinalChangeResult = {
+  status?: "approved" | "denied" | string;
+  chunk_id?: string | null;
+  change_id?: string;
+  old_html?: string | null;
+  new_html?: string | null;
+  operation?: "edit" | "create" | "delete" | string;
+  document_id?: string | null;
+};
+
 export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | null> }) {
   const [sessionId] = useState(
     () => `demo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -121,6 +135,45 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
     [cleanupStream],
   );
 
+  // Reconciles the FINAL event's per-change results against what's actually
+  // on screen right now — never blindly re-applies new_html. For each
+  // "edit" change we compare the live chunk content to old_html/new_html:
+  //   - already at the target (new_html if approved, old_html if denied)
+  //     -> no-op (this is what keeps re-processing a duplicate FINAL, or a
+  //        change the optimistic path already got right, from doing
+  //        anything twice).
+  //   - at the OTHER known state -> move it to the target. Covers both
+  //     "approved but the optimistic apply never happened" and "denied but
+  //     the optimistic apply is still showing".
+  //   - at neither -> something else changed this chunk since the AI
+  //     proposed it (a manual edit, a race). Don't overwrite it; report it
+  //     as a conflict instead.
+  // "create"/"delete" changes are intentionally not reconciled here —
+  // EditorHandle only exposes chunk get/replace, not insert/remove, so
+  // there's no safe way to reconcile those without inventing new methods.
+  const reconcileFinalChanges = useCallback(
+    (changes: FinalChangeResult[]): string[] => {
+      const conflicts: string[] = [];
+      for (const c of changes) {
+        if (c.operation !== "edit" || !c.chunk_id) continue;
+        const target = c.status === "approved" ? c.new_html : c.old_html;
+        if (target == null) continue;
+
+        const currentHtml = editorRef.current?.getChunkHtml(c.chunk_id) ?? null;
+        if (currentHtml === target) {
+          continue; // already correct — idempotent no-op
+        }
+        if (currentHtml === c.old_html || currentHtml === c.new_html) {
+          editorRef.current?.replaceChunk(c.chunk_id, target);
+          continue;
+        }
+        conflicts.push(c.chunk_id);
+      }
+      return conflicts;
+    },
+    [editorRef],
+  );
+
   const openStream = useCallback(
     (sid: string, jid: string) => {
       cleanupStream();
@@ -165,17 +218,59 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
         }
       };
 
+      // proposed_change_batch is the event the backend actually sends — every
+      // HITL turn, whether one change or hundreds, arrives here as a single
+      // event carrying a `changes` array (single-change turns still arrive
+      // this way, with type: "single_approval"). The standalone
+      // "proposed_change" listener above never fires against the real API;
+      // it's kept only as a harmless forward-compat no-op per the docs.
+      const onProposedBatch = (e: Event) => {
+        const me = e as MessageEvent;
+        try {
+          const outer = JSON.parse(me.data);
+          // Double-parse, same as proposed_change: content is a
+          // JSON-stringified string containing { batch_id, batch_total, changes }.
+          const batch = JSON.parse(outer.content) as {
+            batch_id?: string;
+            batch_total?: number;
+            changes: ProposedChange[];
+          };
+          const changes = Array.isArray(batch.changes) ? batch.changes : [];
+          setPendingChanges((prev) => {
+            const existingIds = new Set(prev.map((c) => c.change_id));
+            const toAdd = changes.filter((c) => !existingIds.has(c.change_id));
+            return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+          });
+          const view = editorRef.current?.getView();
+          if (view) {
+            for (const change of changes) addProposedChange(view, change);
+          }
+        } catch (err) {
+          console.error("proposed_change_batch parse failed", err);
+        }
+      };
+
       const onFinal = (e: Event) => {
         const me = e as MessageEvent;
         try {
           const data = JSON.parse(me.data);
           const response = data.result?.response ?? data.content ?? "";
-          const updatedHtml = data.result?.document_changes?.updated_html;
           finalizeInFlight(response);
-          if (typeof updatedHtml === "string" && updatedHtml) {
-            editorRef.current?.setHtml(updatedHtml);
-            lastGoodHtmlRef.current = updatedHtml;
+
+          // The server's authoritative per-change outcomes. There is no
+          // `updated_html` field on this event — don't look for one.
+          const finalChanges = data.result?.document_changes?.changes;
+          if (Array.isArray(finalChanges)) {
+            const conflicts = reconcileFinalChanges(finalChanges as FinalChangeResult[]);
+            if (conflicts.length > 0) {
+              setError(
+                `${conflicts.length} section(s) were edited after the AI's proposal and could not be reconciled automatically — please review manually (chunk id${
+                  conflicts.length > 1 ? "s" : ""
+                }: ${conflicts.join(", ")}).`,
+              );
+            }
           }
+
           setPendingChanges([]);
           const view = editorRef.current?.getView();
           if (view) clearProposedChanges(view);
@@ -209,6 +304,7 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
       map.set("document_sync", onDocSync);
       map.set("intermediate", onIntermediate);
       map.set("proposed_change", onProposed);
+      map.set("proposed_change_batch", onProposedBatch);
       map.set("final", onFinal);
       map.set("usage", onUsage);
       map.set("error", onError);
@@ -220,13 +316,17 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
 
       stillTimerRef.current = setTimeout(() => setStillProcessing(true), 30_000);
     },
-    [cleanupStream, editorRef, finalizeInFlight, pushError, updateInFlight],
+    [cleanupStream, editorRef, finalizeInFlight, pushError, reconcileFinalChanges, updateInFlight],
   );
 
   const send = useCallback(async () => {
     if (isSending) return;
     const text = input.trim();
     if (!text) return;
+    if (pendingChanges.length > 0) {
+      pushError("Approve or deny the pending changes before sending a new message.");
+      return;
+    }
 
     const html = editorRef.current?.getHtml() || lastGoodHtmlRef.current;
     if (!html) {
@@ -277,7 +377,31 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
     } catch (err) {
       pushError(err instanceof Error ? err.message : "Request failed");
     }
-  }, [editorRef, input, isSending, openStream, pushError, reviewMode, sessionId]);
+  }, [editorRef, input, isSending, openStream, pendingChanges, pushError, reviewMode, sessionId]);
+
+  const restorePendingChange = useCallback(
+    (change: ProposedChange | undefined) => {
+      if (!change) return;
+      setPendingChanges((prev) =>
+        prev.some((pending) => pending.change_id === change.change_id)
+          ? prev
+          : [...prev, change],
+      );
+      const view = editorRef.current?.getView();
+      if (view) addProposedChange(view, change);
+    },
+    [editorRef],
+  );
+
+  const revertOptimisticEdit = useCallback(
+    (change: ProposedChange | undefined) => {
+      if (!change?.chunk_id || !change.old_html || !change.new_html) return false;
+      const currentHtml = editorRef.current?.getChunkHtml(change.chunk_id);
+      if (currentHtml !== change.new_html) return false;
+      return editorRef.current?.replaceChunk(change.chunk_id, change.old_html) ?? false;
+    },
+    [editorRef],
+  );
 
   const decide = useCallback(
     async (changeId: string, approved: boolean) => {
@@ -285,32 +409,57 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
       const change = pendingChanges.find((c) => c.change_id === changeId);
 
       // Optimistic UI: apply or remove locally before the server responds.
+      let appliedLocally = false;
       if (approved && change && change.operation === "edit" && change.chunk_id && change.new_html) {
-        editorRef.current?.replaceChunk(change.chunk_id, change.new_html);
+        appliedLocally = editorRef.current?.replaceChunk(change.chunk_id, change.new_html) ?? false;
       }
       const view = editorRef.current?.getView();
       if (view) removeProposedChange(view, changeId);
       setPendingChanges((prev) => prev.filter((c) => c.change_id !== changeId));
 
-      if (!jid) return;
+      if (!jid) {
+        setError("This approval could not be confirmed because the job is no longer available.");
+        if (change) restorePendingChange(change);
+        if (appliedLocally) revertOptimisticEdit(change);
+        return;
+      }
       try {
-        await fetch(
+        const res = await fetch(
           `/api/superdocs/v1/chat/${encodeURIComponent(sessionId)}/approve`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               job_id: jid,
+              change_id: changeId,
               approved,
-              changes: [{ change_id: changeId, approved }],
             }),
           },
         );
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          const reverted = appliedLocally && revertOptimisticEdit(change);
+          setError(
+            `The server rejected this ${approved ? "approval" : "denial"} (${res.status}).${
+              detail ? ` ${detail}` : ""
+            } ${reverted ? "The change was reverted." : "The change was not reverted; please check the section manually."}`,
+          );
+          if (change) restorePendingChange(change);
+        }
       } catch (err) {
         console.error("approve POST failed", err);
+        const reverted = appliedLocally && revertOptimisticEdit(change);
+        setError(
+          `Couldn't reach the server to confirm this decision. ${
+            reverted
+              ? "The change was reverted."
+              : "The change was not reverted; please check the section manually."
+          }${err instanceof Error ? ` ${err.message}` : ""}`,
+        );
+        if (change) restorePendingChange(change);
       }
     },
-    [editorRef, pendingChanges, sessionId],
+    [editorRef, pendingChanges, revertOptimisticEdit, sessionId],
   );
 
   const decideAll = useCallback(
@@ -318,11 +467,13 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
       const jid = jobIdRef.current;
       const snapshot = pendingChanges.slice();
       const view = editorRef.current?.getView();
+      const appliedIds = new Set<string>();
 
       if (approved) {
         for (const c of snapshot) {
           if (c.operation === "edit" && c.chunk_id && c.new_html) {
-            editorRef.current?.replaceChunk(c.chunk_id, c.new_html);
+            const applied = editorRef.current?.replaceChunk(c.chunk_id, c.new_html) ?? false;
+            if (applied) appliedIds.add(c.change_id);
           }
         }
       }
@@ -331,9 +482,25 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
       }
       setPendingChanges([]);
 
-      if (!jid || snapshot.length === 0) return;
+      const restore = () => {
+        let skipped = 0;
+        for (const c of snapshot) {
+          if (appliedIds.has(c.change_id)) {
+            if (!revertOptimisticEdit(c)) skipped += 1;
+          }
+          restorePendingChange(c);
+        }
+        return skipped;
+      };
+
+      if (snapshot.length === 0) return;
+      if (!jid) {
+        setError("These decisions could not be confirmed because the job is no longer available.");
+        restore();
+        return;
+      }
       try {
-        await fetch(
+        const res = await fetch(
           `/api/superdocs/v1/chat/${encodeURIComponent(sessionId)}/approve`,
           {
             method: "POST",
@@ -345,11 +512,32 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
             }),
           },
         );
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          const skipped = restore();
+          setError(
+            `The server rejected this batch ${approved ? "approval" : "denial"} (${res.status}).${
+              detail ? ` ${detail}` : ""
+            } ${
+              skipped
+                ? `${skipped} section(s) were not reverted because they changed; please check them manually.`
+                : "The changes were reverted."
+            }`,
+          );
+        }
       } catch (err) {
         console.error("batch approve POST failed", err);
+        const skipped = restore();
+        setError(
+          `Couldn't reach the server to confirm this batch decision. ${
+            skipped
+              ? `${skipped} section(s) were not reverted because they changed; please check them manually.`
+              : "The changes were reverted."
+          }${err instanceof Error ? ` ${err.message}` : ""}`,
+        );
       }
     },
-    [editorRef, pendingChanges, sessionId],
+    [editorRef, pendingChanges, restorePendingChange, revertOptimisticEdit, sessionId],
   );
 
   // Pattern 2 — inline overlay's Approve/Deny buttons dispatch a window
@@ -423,7 +611,6 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
             </p>
           </div>
         )}
-
         {messages.map((m) => (
           <div
             key={m.id}
@@ -493,7 +680,8 @@ export function ChatPanel({ editorRef }: { editorRef: RefObject<EditorHandle | n
           />
           <button
             onClick={() => void send()}
-            disabled={isSending || !input.trim()}
+            disabled={isSending || !input.trim() || pendingChanges.length > 0}
+            title={pendingChanges.length > 0 ? "Approve or deny the pending changes first" : undefined}
             className="rounded-md bg-blue-600 px-3 py-2 text-[13px] font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
           >
             {isSending ? "Sending…" : "Send"}

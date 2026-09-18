@@ -35,9 +35,20 @@ function withChunkId(spec: NodeSpec): NodeSpec {
           typeof maybeAttrs === "object" &&
           !Array.isArray(maybeAttrs) &&
           !(maybeAttrs as { nodeType?: unknown }).nodeType;
-        return isAttrs
-          ? [tag, { ...(maybeAttrs as Record<string, unknown>), "data-chunk-id": chunkId }, ...rest]
-          : [tag, { "data-chunk-id": chunkId }, maybeAttrs, ...rest];
+
+        if (isAttrs) {
+          return [tag, { ...(maybeAttrs as Record<string, unknown>), "data-chunk-id": chunkId }, ...rest];
+        }
+        // Leaf nodes with no attrs object and no content hole at all — e.g.
+        // horizontal_rule's toDOM() returns just ["hr"], so `maybeAttrs` is
+        // `undefined` here. Appending it as a literal trailing array entry
+        // produces a malformed DOM spec (["hr", {...}, undefined]) that
+        // crashes EditorView construction the moment such a node is in the
+        // document. Only append when there's something real to append.
+        if (maybeAttrs === undefined && rest.length === 0) {
+          return [tag, { "data-chunk-id": chunkId }];
+        }
+        return [tag, { "data-chunk-id": chunkId }, maybeAttrs, ...rest];
       }
     : undefined;
 

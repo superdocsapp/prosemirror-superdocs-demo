@@ -1,6 +1,6 @@
-# ProseMirror × SuperDocs Demo
+# ProseMirror × Typebar (formerly SuperDocs) Demo
 
-Two-pane AI document editor. Raw ProseMirror on the left, SuperDocs chat on the right. Surgical edits via inline diff overlay + side-by-side review cards.
+Two-pane AI document editor. Raw ProseMirror on the left, [Typebar (formerly SuperDocs)](https://typebar.ai) chat on the right. Surgical edits via inline diff overlay + side-by-side review cards.
 
 **Watch the build:** [I converted ProseMirror into Cursor for documents in less than 15 minutes using SuperDocs](https://youtu.be/IrSePc2BAlM)
 
@@ -18,8 +18,8 @@ Open <http://localhost:3000>.
 
 ## Architecture
 
-- **Browser** — ProseMirror editor (left, 70%) + SuperDocs chat panel (right, 30%).
-- **Backend** — Next.js App Router API routes under `app/api/superdocs/*` proxy calls to `https://api.superdocs.app`. The `sk_` API key lives in `.env.local` and never reaches the browser. For SSE, `EventSource` cannot set custom headers, so the proxy injects `api_key` as a query parameter when forwarding to SuperDocs.
+- **Browser** — ProseMirror editor (left, 70%) + Typebar chat panel (right, 30%).
+- **Backend** — Next.js App Router API routes under `app/api/superdocs/*` proxy calls to `https://api.superdocs.app`. The `sk_` API key lives in `.env.local` and never reaches the browser. For SSE, `EventSource` cannot set custom headers, so the proxy injects `api_key` as a query parameter when forwarding to Typebar.
 - **Per turn** — chat serialises editor HTML → `POST /v1/chat/async` → opens `EventSource` → receives `document_sync`, `intermediate`, `proposed_change`, `final`, `usage`, `error` events → renders inline diffs → user approves → `POST /v1/chat/{sid}/approve` → AI resumes on the open stream → `final` reconciles the editor.
 
 ## Review Mode vs. Auto Approve
@@ -66,7 +66,7 @@ After all four turns, click **Export .docx** to download the final document.
 
 ## Model tier
 
-All `/v1/chat/async` requests send `model_tier: "turbo"` — the fastest tier per [Model Selection](https://docs.superdocs.app/guides/model-selection) ("Speed-critical workflows / Fastest"). Change the constant in `components/ChatPanel.tsx` if a faster tier ships.
+All `/v1/chat/async` requests send `model_tier: "turbo"` — the fastest tier per [Model Selection](https://docs.typebar.ai/guides/model-selection) ("Speed-critical workflows / Fastest"). Change the constant in `components/ChatPanel.tsx` if a faster tier ships.
 
 ## Coding-quality safeguards baked in
 
